@@ -1,6 +1,6 @@
 # AI under the hood
 
-Slides and demos from a workshop at Kood/Võru, 26-10-2026. How large language
+Slides and demos from a workshop at Kood/Võru, 28-10-2026. How large language
 models work, and how to run one on your own laptop with Ollama.
 
 ## Slides
