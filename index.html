@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI under the hood · Kood/Võru</title>
+<style>
+  :root {
+    --bg: #10232A; --bg-outer: #0B181D; --fg: #EEF3F2; --muted: #9FB0B5;
+    --card: #17323A; --card-2: #1E3F48; --accent: #F28C38; --teal: #2A9D8F; --yellow: #F2C46D;
+    --code-bg: #0B1A1F; --code-fg: #E6EDF3;
+  }
+  body.light {
+    --bg: #FFFFFF; --bg-outer: #DCE4E2; --fg: #1D2433; --muted: #5F6E80;
+    --card: #EEF3F2; --card-2: #DDE7E5; --code-bg: #17323A; --code-fg: #EEF3F2;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg-outer); }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: var(--fg); }
+  .stage {
+    position: absolute; left: 50%; top: 50%; width: 1280px; height: 720px;
+    background: var(--bg); overflow: hidden; transform: translate(-50%, -50%);
+  }
+  .slide { position: absolute; inset: 0; padding: 56px 72px 64px; display: none; flex-direction: column; }
+  .slide.active { display: flex; }
+  .eyebrow { font-size: 16px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 10px; }
+  h1 { font-size: 64px; line-height: 1.05; margin: 0 0 20px; }
+  h2 { font-size: 42px; line-height: 1.1; margin: 0 0 28px; }
+  h3 { font-size: 26px; margin: 0 0 10px; }
+  p, li { font-size: 26px; line-height: 1.4; }
+  p { margin: 0 0 16px; }
+  ul { margin: 0; padding-left: 28px; }
+  li { margin-bottom: 10px; }
+  li::marker { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .small { font-size: 18px; }
+  .big { font-size: 34px; }
+  .accent { color: var(--accent); }
+  .teal { color: var(--teal); }
+  .grow { flex: 1; }
+  .row { display: flex; gap: 28px; }
+  .col { flex: 1; min-width: 0; }
+  .center { display: flex; flex-direction: column; justify-content: center; }
+  .cards { display: grid; gap: 24px; }
+  .cards.c2 { grid-template-columns: 1fr 1fr; }
+  .cards.c3 { grid-template-columns: 1fr 1fr 1fr; }
+  .cards.c4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .card { background: var(--card); border-radius: 16px; padding: 26px 28px; }
+  .card p, .card li { font-size: 22px; }
+  .card h3 { font-size: 26px; }
+  .num {
+    width: 46px; height: 46px; border-radius: 50%; background: var(--accent); color: #17323A;
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 22px; margin-bottom: 14px;
+  }
+  .num.teal { background: var(--teal); color: #fff; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; background: var(--card); padding: 2px 8px; border-radius: 6px; }
+  pre {
+    position: relative; background: var(--code-bg); color: var(--code-fg); border-radius: 14px; padding: 20px 24px; margin: 0 0 18px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 22px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+  }
+  pre .c { color: #7F949B; }
+  .copy {
+    position: absolute; top: 10px; right: 10px; font-size: 14px; padding: 4px 10px; border-radius: 8px;
+    border: 1px solid #3A5A63; background: transparent; color: #9FB0B5; cursor: pointer;
+  }
+  .copy:hover { color: #fff; border-color: var(--accent); }
+  .demo-tag {
+    display: inline-block; align-self: flex-start; background: var(--accent); color: #17323A; font-weight: 700; font-size: 16px;
+    letter-spacing: 1px; text-transform: uppercase; padding: 6px 14px; border-radius: 999px; margin-bottom: 14px;
+  }
+  .footer { position: absolute; left: 72px; right: 72px; bottom: 22px; display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); }
+  .progress { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--teal); transition: width .2s; }
+  .nav { position: fixed; right: 16px; bottom: 12px; display: flex; gap: 8px; opacity: .35; z-index: 10; }
+  .nav:hover { opacity: 1; }
+  .nav button { background: #17323A; color: #EEF3F2; border: 0; border-radius: 8px; padding: 6px 12px; font-size: 16px; cursor: pointer; }
+  .notes {
+    position: fixed; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.88); color: #fff; font-size: 18px; line-height: 1.5;
+    padding: 16px 24px 40px; display: none; z-index: 9; white-space: pre-line;
+  }
+  .notes.show { display: block; }
+
+  /* Title */
+  .title-slide { justify-content: center; }
+  .title-slide h1 { font-size: 80px; }
+  .dots { display: flex; gap: 14px; margin-top: 36px; }
+  .dots span { width: 18px; height: 18px; border-radius: 50%; background: var(--teal); }
+  .dots span:last-child { background: var(--accent); }
+
+  /* Probability bars */
+  .bars { display: flex; flex-direction: column; gap: 12px; }
+  .bar { display: grid; grid-template-columns: 170px 1fr 80px; align-items: center; gap: 16px; font-size: 24px; }
+  .bar .track { background: var(--card); border-radius: 8px; height: 34px; overflow: hidden; }
+  .bar .fill { background: var(--teal); height: 100%; border-radius: 8px; transition: width .35s; }
+  .bar.top .fill { background: var(--accent); }
+  .bar .pct { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .prompt-line { font-size: 40px; font-weight: 700; margin-bottom: 30px; }
+  .prompt-line .blank { color: var(--accent); }
+
+  /* Tokens */
+  .tokens { display: flex; flex-wrap: wrap; gap: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 34px; margin: 10px 0 24px; }
+  .tok { padding: 6px 4px; border-radius: 6px; white-space: pre; }
+  .t0 { background: rgba(42,157,143,.35); } .t1 { background: rgba(242,140,56,.35); } .t2 { background: rgba(242,196,109,.35); } .t3 { background: rgba(107,122,143,.45); }
+  .ids { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 24px; color: var(--muted); }
+
+  /* Loop diagram */
+  .loop { display: flex; align-items: center; gap: 16px; margin: 8px 0 28px; }
+  .loop .step { background: var(--card); border-radius: 14px; padding: 16px 20px; font-size: 22px; font-weight: 700; text-align: center; flex: 1; }
+  .loop .arrow { color: var(--accent); font-size: 30px; font-weight: 800; }
+  .gen-text { font-size: 36px; font-weight: 700; min-height: 54px; margin-bottom: 18px; }
+  .gen-text .new { color: var(--accent); }
+  .btn {
+    background: var(--accent); color: #17323A; border: 0; border-radius: 10px; padding: 10px 20px; font-size: 20px; font-weight: 700; cursor: pointer;
+  }
+  .btn.ghost { background: transparent; color: var(--fg); border: 2px solid var(--card-2); }
+  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
+  input[type=range] { width: 320px; accent-color: var(--accent); }
+  input[type=text], textarea {
+    background: var(--card); color: var(--fg); border: 2px solid var(--card-2); border-radius: 10px; padding: 10px 14px; font-size: 20px; font-family: inherit;
+  }
+  .samples { font-size: 24px; color: var(--muted); min-height: 36px; }
+  .samples b { color: var(--fg); }
+
+  /* Nested AI */
+  .nest { border-radius: 28px; padding: 18px 24px 24px; }
+  .nest > .label { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+  .nest > .sub { font-size: 18px; color: var(--muted); margin-bottom: 14px; }
+  .n1 { background: var(--card); } .n2 { background: var(--card-2); } .n3 { background: rgba(42,157,143,.35); } .n4 { background: var(--accent); color: #17323A; }
+  .n4 > .sub { color: #17323A; }
+
+  /* Attention */
+  .sentence { font-size: 38px; line-height: 1.8; margin: 20px 0 30px; }
+  .sentence span { padding: 4px 6px; border-radius: 8px; }
+  .att-it { outline: 3px solid var(--accent); }
+  .att-hi { background: rgba(42,157,143,.75); color: #fff; }
+  .att-mid { background: rgba(42,157,143,.3); }
+
+  /* Context */
+  .ctx { display: flex; flex-direction: column; gap: 12px; }
+  .ctx .req { display: flex; gap: 8px; align-items: center; font-size: 18px; }
+  .ctx .req .lbl { width: 130px; color: var(--muted); }
+  .ctx .msg { padding: 8px 12px; border-radius: 8px; background: var(--card); font-size: 18px; }
+  .ctx .msg.u { background: rgba(242,140,56,.35); }
+  .ctx .msg.a { background: rgba(42,157,143,.35); }
+
+  /* Table */
+  table { border-collapse: collapse; width: 100%; font-size: 22px; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--card-2); }
+  th { color: var(--muted); font-weight: 600; font-size: 18px; text-transform: uppercase; letter-spacing: 1px; }
+
+  /* Live stream */
+  .stream-out {
+    flex: 1; background: var(--card); border-radius: 14px; padding: 18px 20px; font-size: 24px; line-height: 1.6; overflow: auto; white-space: pre-wrap;
+  }
+  .stream-out .tk:nth-child(4n+1) { background: rgba(42,157,143,.35); }
+  .stream-out .tk:nth-child(4n+2) { background: rgba(242,140,56,.35); }
+  .stream-out .tk:nth-child(4n+3) { background: rgba(242,196,109,.35); }
+  .stream-out .tk:nth-child(4n) { background: rgba(107,122,143,.45); }
+  .stream-out .tk { border-radius: 4px; }
+  .stats { font-size: 18px; color: var(--muted); margin-top: 10px; min-height: 26px; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+
+<!-- ============ INTRO ============ -->
+<section class="slide title-slide" data-section="Intro" data-notes="Start: about 0:20 into the session. This part runs about 70 minutes.
+Ask: who has used ChatGPT, Claude or Copilot? Who has run a model on their own laptop?">
+  <div class="eyebrow">AI workshop · Kood/Võru · 26-10-2026</div>
+  <h1>AI under the hood</h1>
+  <p class="big muted">How it works, and how to run it on your own laptop</p>
+  <div class="dots"><span></span><span></span><span></span><span></span></div>
+</section>
+
+<section class="slide" data-section="Intro" data-notes="Keep it fast. Times are a guide.">
+  <div class="eyebrow">Plan</div>
+  <h2>The next 70 minutes</h2>
+  <div class="cards c4 grow" style="grid-template-rows: auto;">
+    <div class="card"><div class="num">1</div><h3>Under the hood</h3><p class="muted">Tokens, prediction, training</p><p class="small accent">~20 min</p></div>
+    <div class="card"><div class="num">2</div><h3>Run it locally</h3><p class="muted">Ollama, models, hardware</p><p class="small accent">~10 min</p></div>
+    <div class="card"><div class="num">3</div><h3>Demos</h3><p class="muted">Terminal, API, a tiny agent</p><p class="small accent">~20 min</p></div>
+    <div class="card"><div class="num teal">4</div><h3>Your turn</h3><p class="muted">Try it yourself</p><p class="small accent">~15 min</p></div>
+  </div>
+</section>
+
+<!-- ============ UNDER THE HOOD ============ -->
+<section class="slide" data-section="Under the hood" data-notes="AI is the broad field. LLMs are one specific kind of deep learning model.
+ChatGPT, Claude, Gemini, Llama are all LLMs.">
+  <div class="eyebrow">Under the hood</div>
+  <h2>Where LLMs fit</h2>
+  <div class="nest n1 grow">
+    <div class="label">Artificial intelligence</div><div class="sub">Computers doing things that look smart</div>
+    <div class="nest n2">
+      <div class="label">Machine learning</div><div class="sub">Learn patterns from data instead of hand-written rules</div>
+      <div class="nest n3">
+        <div class="label">Deep learning</div><div class="sub">Machine learning with large neural networks</div>
+        <div class="nest n4">
+          <div class="label">Large language models</div><div class="sub">Neural networks trained on huge amounts of text</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-section="Under the hood" data-notes="The whole trick: given the text so far, what comes next?
+Numbers are made up to show the idea. A real model gives a probability for every token in its vocabulary (tens of thousands).">
+  <div class="eyebrow">Under the hood</div>
+  <h2>An LLM predicts the next token</h2>
+  <div class="prompt-line">The capital of Estonia is <span class="blank">___</span></div>
+  <div class="bars" id="capitalBars"></div>
+  <p class="small muted" style="margin-top:auto">Illustrative numbers</p>
+</section>
+
+<section class="slide" data-section="Under the hood" data-notes="Models don't see letters or words. Text is cut into tokens, each token becomes a number.
+The split shown is illustrative. Show the real thing at tiktokenizer.vercel.app.
+Strawberry: the model sees tokens like 'str' 'aw' 'berry', not letters. That's why counting letters is hard. We'll try it in the demo.">
+  <div class="eyebrow">Under the hood</div>
+  <h2>Text becomes tokens, tokens become numbers</h2>
+  <div class="tokens">
+    <span class="tok t0">Kood</span><span class="tok t1">/</span><span class="tok t2">V</span><span class="tok t3">õ</span><span class="tok t0">ru</span><span class="tok t1"> is</span><span class="tok t2"> a</span><span class="tok t3"> coding</span><span class="tok t0"> school</span>
+  </div>
+  <div class="ids">[ 42, 14, 53, 12437, 2739, 374, 264, 11058, 2978 ]</div>
+  <div class="row" style="margin-top:36px">
+    <div class="col">
+      <ul>
+        <li>Rule of thumb: 1 token ≈ ¾ of an English word</li>
+        <li>Estonian often needs more tokens per word</li>
+        <li>Why <b>“how many r's in strawberry?”</b> is hard</li>
+      </ul>
+    </div>
+  </div>
+  <p class="small muted" style="margin-top:auto">Illustrative split and IDs. Try a real tokenizer: tiktokenizer.vercel.app</p>
+</section>
+
+<section class="slide" data-section="Under the hood" data-notes="Click Next token a few times. At each step the model scores candidates, we pick one, add it, repeat.
+That's all generation is: a loop. Probabilities are illustrative.">
+  <div class="eyebrow">Under the hood</div>
+  <h2>Generating text is a loop</h2>
+  <div class="loop">
+    <div class="step">Read the text so far</div><div class="arrow">→</div>
+    <div class="step">Score every possible next token</div><div class="arrow">→</div>
+    <div class="step">Pick one</div><div class="arrow">→</div>
+    <div class="step">Add it and repeat</div>
+  </div>
+  <div class="gen-text" id="genText"></div>
+  <div class="bars" id="genBars"></div>
+  <div class="controls" style="margin-top:auto">
+    <button class="btn" id="genNext">Next token</button>
+    <button class="btn ghost" id="genReset">Reset</button>
+    <span class="small muted">Illustrative probabilities</span>
+  </div>
+</section>
+
+<section class="slide" data-section="Under the hood" data-notes="Temperature reshapes the probabilities before picking.
+Low: almost always the top choice. Predictable, good for code and facts.
+High: flatter, more random. More creative, more nonsense.
+Slide to 0, sample. Slide to 2, sample.">
+  <div class="eyebrow">Under the hood</div>
+  <h2>Temperature: how adventurous the pick is</h2>
+  <div class="prompt-line" style="font-size:32px">The best thing about Võru is the <span class="blank">___</span></div>
+  <div class="row grow">
+    <div class="col"><div class="bars" id="tempBars"></div></div>
+    <div class="col" style="flex:0 0 380px">
+      <p>Temperature: <b class="accent" id="tempVal">1.0</b></p>
+      <input type="range" id="tempSlider" min="0" max="2" step="0.1" value="1">
+      <p class="small muted" style="margin-top:10px">0 = always the top token</p>
+      <button class="btn" id="tempSample" style="margin-top:12px">Sample 10 times</button>
+      <div class="samples" id="tempSamples" style="margin-top:16px"></div>
+    </div>
+  </div>
+  <p class="small muted">Toy scores, real maths (softmax with temperature)</p>
+</section>
+
+<section class="slide" data-section="Under the hood" data-notes="Weights/parameters: the numbers inside the network. Training nudges them, billions of times, so predictions get better.
+Pre-training: read a big chunk of the internet, books, code. Learn to predict the next token. Very expensive.
+Fine-tuning: show it many examples of good answers to instructions.
+Feedback: people (or other models) rate answers; the model learns which ones are preferred.">
+  <div class="eyebrow">Under the hood</div>
+  <h2>Where the knowledge comes from</h2>
+  <div class="cards c3">
+    <div class="card"><div class="num">1</div><h3>Pre-training</h3><p>Read huge amounts of text. Guess the next token. Adjust. Repeat.</p></div>
+    <div class="card"><div class="num">2</div><h3>Fine-tuning</h3><p>Learn from examples of questions and good answers.</p></div>
+    <div class="card"><div class="num">3</div><h3>Feedback</h3><p>Rated answers teach it which replies people prefer.</p></div>
+  </div>
+  <div class="card" style="margin-top:28px; display:flex; align-items:center; gap:28px">
+    <div style="font-size:64px; font-weight:800" class="accent">8B</div>
+    <p style="margin:0">= 8 billion parameters: the numbers training adjusts. More parameters usually means smarter, but bigger and slower.</p>
+  </div>
+</section>
+
+<section class="slide" data-section="Under the hood" data-notes="Inside the model, every token becomes a long list of numbers (a vector). Similar meaning ends up close together.
+This is also how search over your own documents works (RAG). Demo 7 shows real numbers.">
+  <div class="eyebrow">Under the hood</div>
+  <h2>Meaning becomes position</h2>
+  <div class="row grow">
+    <div class="col" style="flex:0 0 640px">
+      <svg viewBox="0 0 640 420" width="640" height="420" aria-label="Words plotted by meaning">
+        <rect x="0" y="0" width="640" height="420" rx="16" fill="var(--card)"/>
+        <g font-size="22" font-family="inherit" fill="var(--fg)">
+          <circle cx="110" cy="100" r="9" fill="var(--teal)"/><text x="126" y="107">dog</text>
+          <circle cx="150" cy="140" r="9" fill="var(--teal)"/><text x="166" y="147">puppy</text>
+          <circle cx="90" cy="165" r="9" fill="var(--teal)"/><text x="106" y="172">cat</text>
+          <circle cx="470" cy="90" r="9" fill="var(--accent)"/><text x="486" y="97">Tallinn</text>
+          <circle cx="510" cy="135" r="9" fill="var(--accent)"/><text x="526" y="142">Riga</text>
+          <circle cx="450" cy="160" r="9" fill="var(--accent)"/><text x="466" y="167">Võru</text>
+          <circle cx="260" cy="320" r="9" fill="var(--yellow)"/><text x="276" y="327">pizza</text>
+          <circle cx="320" cy="355" r="9" fill="var(--yellow)"/><text x="336" y="362">pasta</text>
+          <circle cx="220" cy="370" r="9" fill="var(--yellow)"/><text x="236" y="377">sushi</text>
+        </g>
+      </svg>
+    </div>
+    <div class="col center">
+      <ul>
+        <li>Each token becomes a list of numbers</li>
+        <li>Similar meaning, nearby numbers</li>
+        <li>Used for search over your own docs</li>
+      </ul>
+    </div>
+  </div>
+  <p class="small muted">Illustrative 2D view. Real vectors have hundreds of dimensions.</p>
+</section>
+
+<section class="slide" data-section="Under the hood" data-notes="Attention is the T in GPT (transformer). Each token looks at all the others and decides which ones matter for it.
+Here 'it' needs to figure out what it refers to. Change 'tired' to 'wide' and 'it' should point at street instead.">
+  <div class="eyebrow">Under the hood</div>
+  <h2>Attention: which words matter for this one?</h2>
+  <div class="sentence">
+    <span>The</span> <span class="att-hi">animal</span> <span>didn't</span> <span>cross</span> <span>the</span> <span class="att-mid">street</span> <span>because</span> <span class="att-it">it</span> <span>was</span> <span>too</span> <span class="att-mid">tired</span>.
+  </div>
+  <ul>
+    <li>Every token looks at every other token</li>
+    <li>“it” pays most attention to “animal”</li>
+    <li>This is the “T” in GPT: <b>Transformer</b></li>
+  </ul>
+</section>
+
+<section class="slide" data-section="Under the hood" data-notes="The model itself remembers nothing between calls. The chat app sends the full conversation every time.
+Context window = how many tokens fit in one request. When it's full, old messages get dropped or summarised.
+Demo 6 shows this in 30 lines of Python.">
+  <div class="eyebrow">Under the hood</div>
+  <h2>The model has no memory</h2>
+  <div class="row grow">
+    <div class="col">
+      <div class="ctx">
+        <div class="req"><span class="lbl">Request 1</span><span class="msg u">Hi, I'm Mari</span></div>
+        <div class="req"><span class="lbl">Request 2</span><span class="msg u">Hi, I'm Mari</span><span class="msg a">Hi Mari!</span><span class="msg u">What's my name?</span></div>
+        <div class="req"><span class="lbl">Request 3</span><span class="msg u">Hi, I'm Mari</span><span class="msg a">Hi Mari!</span><span class="msg u">What's my name?</span><span class="msg a">Mari</span><span class="msg u">…</span></div>
+      </div>
+    </div>
+  </div>
+  <ul>
+    <li>Every request sends the whole conversation again</li>
+    <li><b>Context window</b>: the most tokens one request can hold</li>
+  </ul>
+</section>
+
+<section class="slide" data-section="Under the hood" data-notes="It predicts plausible text, it doesn't look things up. Plausible and true are not the same.
+Small local models show these weaknesses much more clearly, which makes them great for learning.">
+  <div class="eyebrow">Under the hood</div>
+  <h2>What it's bad at</h2>
+  <div class="cards c2 grow">
+    <div class="card"><h3 class="accent">Making things up</h3><p>Sounds confident when wrong. Plausible is not the same as true.</p></div>
+    <div class="card"><h3 class="accent">Counting and exact maths</h3><p>It sees tokens, not letters or digits.</p></div>
+    <div class="card"><h3 class="accent">Recent events</h3><p>Knowledge stops at its training cutoff.</p></div>
+    <div class="card"><h3 class="accent">Knowing what it doesn't know</h3><p>Check its work. Give it context. Ask for sources.</p></div>
+  </div>
+</section>
+
+<!-- ============ RUN IT LOCALLY ============ -->
+<section class="slide title-slide" data-section="Run it locally" data-notes="About 10 minutes for this part.">
+  <div class="eyebrow">Part 2</div>
+  <h1>Run it on your own laptop</h1>
+  <p class="big muted">No subscription needed</p>
+</section>
+
+<section class="slide" data-section="Run it locally" data-notes="Trade-off: a 3B model on a laptop is far weaker than the big cloud models. Fine for learning, prototyping and private data.">
+  <div class="eyebrow">Run it locally</div>
+  <h2>Why run a model locally?</h2>
+  <div class="cards c4">
+    <div class="card"><div class="num">1</div><h3>Free</h3><p>No subscription, no API bill</p></div>
+    <div class="card"><div class="num">2</div><h3>Private</h3><p>Your data stays on your machine</p></div>
+    <div class="card"><div class="num">3</div><h3>Offline</h3><p>Works without internet</p></div>
+    <div class="card"><div class="num">4</div><h3>Hackable</h3><p>A local API you can build on</p></div>
+  </div>
+  <div class="card" style="margin-top:28px"><p style="margin:0"><b class="accent">Trade-off:</b> smaller models, less smart than the big cloud ones. Needs RAM.</p></div>
+</section>
+
+<section class="slide" data-section="Run it locally" data-notes="Download is ~2 GB for llama3.2:3b. On shared Wi-Fi, start with the 1B model.
+After install, Ollama runs a local server on port 11434.">
+  <div class="eyebrow">Run it locally</div>
+  <h2>Install Ollama</h2>
+  <div class="row">
+    <div class="col">
+      <h3>macOS / Windows</h3>
+      <p>Download from <b class="accent">ollama.com/download</b></p>
+      <h3 style="margin-top:20px">Linux</h3>
+<pre>curl -fsSL https://ollama.com/install.sh | sh</pre>
+    </div>
+    <div class="col">
+      <h3>Then</h3>
+<pre><span class="c"># download a small model</span>
+ollama pull llama3.2:3b
+
+<span class="c"># chat with it</span>
+ollama run llama3.2:3b</pre>
+    </div>
+  </div>
+  <p class="small muted" style="margin-top:auto">Slow Wi-Fi or 8 GB RAM? Use <code>llama3.2:1b</code> or <code>gemma3:1b</code>.</p>
+</section>
+
+<section class="slide" data-section="Run it locally" data-notes="Sizes are approximate download sizes of the default (4-bit) versions. Check ollama.com/library on the day; newer models appear all the time.
+Quantization: storing weights in fewer bits. Much smaller, slightly less accurate. It's why an 8B model fits on a laptop.">
+  <div class="eyebrow">Run it locally</div>
+  <h2>Which model fits my laptop?</h2>
+  <table>
+    <tr><th>Your RAM</th><th>Try</th><th>Download (approx.)</th></tr>
+    <tr><td>8 GB</td><td><code>llama3.2:1b</code> · <code>gemma3:1b</code> · <code>llama3.2:3b</code></td><td>0.8 – 2 GB</td></tr>
+    <tr><td>16 GB</td><td><code>llama3.1:8b</code> · <code>qwen2.5:7b</code></td><td>~5 GB</td></tr>
+    <tr><td>32 GB+</td><td><code>qwen2.5:14b</code></td><td>~9 GB</td></tr>
+  </table>
+  <div class="card" style="margin-top:28px"><p style="margin:0"><b class="accent">Quantization:</b> weights stored in fewer bits. Much smaller, slightly less accurate.</p></div>
+  <p class="small muted" style="margin-top:auto">More models: ollama.com/library</p>
+</section>
+
+<section class="slide" data-section="Run it locally" data-notes="Leave this up while people install.">
+  <div class="eyebrow">Run it locally</div>
+  <h2>Cheat sheet</h2>
+  <div class="row">
+    <div class="col">
+<pre>ollama list        <span class="c"># models you have</span>
+ollama ps          <span class="c"># models loaded now</span>
+ollama show llama3.2:3b
+ollama rm llama3.2:3b</pre>
+    </div>
+    <div class="col">
+<pre><span class="c"># inside ollama run</span>
+/set parameter temperature 0
+/set system "Answer in one sentence."
+/clear
+/bye</pre>
+    </div>
+  </div>
+  <p>API on <code>http://localhost:11434</code></p>
+</section>
+
+<!-- ============ DEMOS ============ -->
+<section class="slide title-slide" data-section="Demos" data-notes="About 20 minutes. Switch to the terminal for each one.
+Before starting: ollama pull llama3.2:3b and ollama pull nomic-embed-text. Run demos from the demos/ folder.">
+  <div class="eyebrow">Part 3</div>
+  <h1>Demos</h1>
+  <p class="big muted">Switching to the terminal</p>
+</section>
+
+<section class="slide" data-section="Demos" data-notes="Ask: today's date (it doesn't know). Ask: a fact about Võru (watch it make something up). Ask: strawberry.">
+  <span class="demo-tag">Demo 1 · Terminal</span>
+  <h2>Chat with a local model</h2>
+<pre>ollama run llama3.2:3b</pre>
+  <h3>Try</h3>
+  <ul>
+    <li>What is today's date?</li>
+    <li>Tell me three facts about Võru.</li>
+    <li>How many r's are in “strawberry”?</li>
+  </ul>
+  <p class="muted" style="margin-top:auto">Watch for: confident wrong answers</p>
+</section>
+
+<section class="slide" data-section="Demos" data-notes="Run the same prompt 3 times at each temperature. At 0 the answers should be (nearly) identical.">
+  <span class="demo-tag">Demo 2 · Terminal</span>
+  <h2>Temperature for real</h2>
+<pre>/set parameter temperature 0
+Write a one-line slogan for Võru.
+
+/set parameter temperature 1.5
+Write a one-line slogan for Võru.</pre>
+  <p class="muted" style="margin-top:auto">Same prompt, three times each. Compare.</p>
+</section>
+
+<section class="slide" data-section="Demos" data-notes="The system prompt is just text placed before the conversation. Every assistant product has one.">
+  <span class="demo-tag">Demo 3 · Terminal</span>
+  <h2>System prompt: set the rules</h2>
+<pre>/set system "You are a pirate. Answer in one sentence."
+What is a database?
+
+/set system "You explain code to a 10-year-old."
+What is recursion?</pre>
+  <p class="muted" style="margin-top:auto">Hidden instructions sent before your message</p>
+</section>
+
+<section class="slide" data-section="Demos" data-notes="Each coloured chunk is one piece streamed by Ollama, which is roughly one token.
+Needs Ollama running. Serve this folder with: python3 -m http.server 8000 and open http://localhost:8000.
+If it fails with a CORS error: quit Ollama and start it with OLLAMA_ORIGINS=* ollama serve">
+  <span class="demo-tag">Demo 4 · Browser</span>
+  <h2>Watch it generate, token by token</h2>
+  <div class="controls">
+    <input type="text" id="liveModel" value="llama3.2:3b" style="width:200px">
+    <input type="text" id="livePrompt" value="Explain what a token is in two sentences." style="flex:1">
+    <button class="btn" id="liveGo">Run</button>
+    <button class="btn ghost" id="liveStop">Stop</button>
+  </div>
+  <div class="stream-out" id="liveOut"></div>
+  <div class="stats" id="liveStats">Talks to Ollama on localhost:11434</div>
+</section>
+
+<section class="slide" data-section="Demos" data-notes="Everything is just HTTP + JSON. Any language can do this. Show demos/api.sh.">
+  <span class="demo-tag">Demo 5 · Terminal</span>
+  <h2>It's just an API</h2>
+<pre>curl http://localhost:11434/api/chat -d '{
+  "model": "llama3.2:3b",
+  "messages": [{"role": "user", "content": "Hi! Who are you?"}],
+  "stream": false
+}'</pre>
+  <p class="muted">Script: <code>demos/api.sh</code></p>
+</section>
+
+<section class="slide" data-section="Demos" data-notes="Run with memory: tell it your name, ask it back. Then run with --no-memory and repeat. It forgets because we stop sending the history.
+Open the file and show the messages list.">
+  <span class="demo-tag">Demo 6 · Terminal</span>
+  <h2>Memory is just a list</h2>
+<pre>python3 demos/chat.py
+python3 demos/chat.py --no-memory</pre>
+  <ul>
+    <li>Tell it your name, then ask for it</li>
+    <li>Without history, it forgets</li>
+  </ul>
+  <p class="muted" style="margin-top:auto">~40 lines of Python, no libraries</p>
+</section>
+
+<section class="slide" data-section="Demos" data-notes="Real embeddings this time. Similar sentences score close to 1. Note the two capital sentences match even with no shared words.">
+  <span class="demo-tag">Demo 7 · Terminal</span>
+  <h2>Embeddings: meaning as numbers</h2>
+<pre>ollama pull nomic-embed-text
+python3 demos/embeddings.py</pre>
+  <ul>
+    <li>Turns sentences into vectors</li>
+    <li>Scores how similar they are</li>
+    <li>Similar meaning, high score, even with different words</li>
+  </ul>
+</section>
+
+<section class="slide" data-section="Demos" data-notes="The model can't run code. It replies with: please call tool X with these arguments. Our script runs it and sends the result back.
+That loop is what coding agents do, with tools like read file, write file, run tests.">
+  <span class="demo-tag">Demo 8 · Terminal</span>
+  <h2>A tiny agent: the model asks, your code acts</h2>
+  <div class="loop">
+    <div class="step">Question</div><div class="arrow">→</div>
+    <div class="step">Model: “call calculate(…)”</div><div class="arrow">→</div>
+    <div class="step">Script runs it</div><div class="arrow">→</div>
+    <div class="step">Model answers</div>
+  </div>
+<pre>python3 demos/tools.py "What is 1234 * 5678, and what day is it today?"</pre>
+  <p class="muted" style="margin-top:auto">Coding agents are this loop with more tools</p>
+</section>
+
+<!-- ============ YOUR TURN ============ -->
+<section class="slide" data-section="Your turn" data-notes="About 15 minutes. Walk around. No laptop or low RAM: pair up.">
+  <div class="eyebrow">Part 4 · Your turn</div>
+  <h2>Try it yourself</h2>
+  <div class="cards c3">
+    <div class="card"><div class="num">1</div><h3>Install</h3><p>Ollama + <code>llama3.2:1b</code> or <code>3b</code></p></div>
+    <div class="card"><div class="num">2</div><h3>Break it</h3><p>Find a question it gets confidently wrong</p></div>
+    <div class="card"><div class="num">3</div><h3>Tune it</h3><p>Same prompt at temperature 0 and 1.5</p></div>
+    <div class="card"><div class="num">4</div><h3>Shape it</h3><p>System prompt: a study buddy for your current project</p></div>
+    <div class="card"><div class="num">5</div><h3>Build it</h3><p>Add your own tool to <code>tools.py</code></p></div>
+    <div class="card"><div class="num teal">?</div><h3>Stuck?</h3><p>Pair up. Ask your neighbour.</p></div>
+  </div>
+</section>
+
+<!-- ============ WRAP UP ============ -->
+<section class="slide" data-section="Wrap up" data-notes="One minute.">
+  <div class="eyebrow">Wrap up</div>
+  <h2>Remember</h2>
+  <div class="cards c2 grow">
+    <div class="card"><div class="num">1</div><h3>It predicts the next token</h3><p>Trained on lots of text. Plausible, not always true.</p></div>
+    <div class="card"><div class="num">2</div><h3>Tokens, temperature, context</h3><p>The knobs you control.</p></div>
+    <div class="card"><div class="num">3</div><h3>Local models are free</h3><p>Good enough to learn and build with.</p></div>
+    <div class="card"><div class="num">4</div><h3>Agents are a loop</h3><p>Model asks, code acts, repeat.</p></div>
+  </div>
+</section>
+
+<section class="slide title-slide" data-section="Wrap up" data-notes="">
+  <div class="eyebrow">Kood/Võru · 26-10-2026</div>
+  <h1>Questions?</h1>
+  <p class="big muted">Thanks for having me</p>
+  <div class="dots"><span></span><span></span><span></span><span></span></div>
+</section>
+
+<div class="footer"><span id="footSection"></span><span id="footNum"></span></div>
+<div class="progress" id="progress"></div>
+</div>
+
+<div class="notes" id="notes"></div>
+<div class="nav">
+  <button id="prevBtn" title="Previous (←)">←</button>
+  <button id="nextBtn" title="Next (→)">→</button>
+  <button id="themeBtn" title="Light/dark (t)">◐</button>
+  <button id="notesBtn" title="Notes (n)">n</button>
+</div>
+
+<script>
+(function () {
+  // ---------- Deck ----------
+  const stage = document.getElementById('stage');
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const notes = document.getElementById('notes');
+  let current = 0;
+
+  function fit() {
+    const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    stage.style.transform = 'translate(-50%, -50%) scale(' + s + ')';
+  }
+
+  function show(i) {
+    current = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((el, idx) => el.classList.toggle('active', idx === current));
+    const el = slides[current];
+    document.getElementById('footSection').textContent = el.dataset.section || '';
+    document.getElementById('footNum').textContent = (current + 1) + ' / ' + slides.length;
+    document.getElementById('progress').style.width = ((current + 1) / slides.length * 100) + '%';
+    notes.textContent = el.dataset.notes || 'No notes.';
+    history.replaceState(null, '', '#' + (current + 1));
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target.matches('input, textarea')) return;
+    if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); show(current + 1); }
+    else if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); show(current - 1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key === 'n') notes.classList.toggle('show');
+    else if (e.key === 't') document.body.classList.toggle('light');
+    else if (e.key === 'f') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
+  });
+  document.getElementById('prevBtn').onclick = () => show(current - 1);
+  document.getElementById('nextBtn').onclick = () => show(current + 1);
+  document.getElementById('themeBtn').onclick = () => document.body.classList.toggle('light');
+  document.getElementById('notesBtn').onclick = () => notes.classList.toggle('show');
+  window.addEventListener('resize', fit);
+
+  // Copy buttons on code blocks
+  document.querySelectorAll('pre').forEach((pre) => {
+    const text = pre.textContent.trim();
+    const b = document.createElement('button');
+    b.className = 'copy';
+    b.textContent = 'copy';
+    b.onclick = () => {
+      const done = () => { b.textContent = 'copied'; setTimeout(() => (b.textContent = 'copy'), 1200); };
+      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done);
+      else {
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); done();
+      }
+    };
+    pre.appendChild(b);
+  });
+
+  // ---------- Probability bars ----------
+  function renderBars(container, items) {
+    // items: [[label, prob], ...] sorted high to low
+    container.innerHTML = '';
+    items.forEach(([label, p], i) => {
+      const row = document.createElement('div');
+      row.className = 'bar' + (i === 0 ? ' top' : '');
+      row.innerHTML = '<span></span><div class="track"><div class="fill"></div></div><span class="pct"></span>';
+      row.children[0].textContent = label;
+      row.children[2].textContent = (p * 100).toFixed(p < 0.01 ? 1 : 0) + '%';
+      container.appendChild(row);
+      requestAnimationFrame(() => { row.querySelector('.fill').style.width = (p * 100) + '%'; });
+    });
+  }
+
+  renderBars(document.getElementById('capitalBars'), [
+    ['Tallinn', 0.91], ['located', 0.03], ['a', 0.02], ['the', 0.02], ['Tartu', 0.01],
+  ]);
+
+  // ---------- Generation loop (illustrative) ----------
+  const genStart = 'Kood/Võru students';
+  const genSteps = [
+    [[' learn', 0.46], [' are', 0.31], [' build', 0.12]],
+    [[' to', 0.58], [' by', 0.22], [' programming', 0.09]],
+    [[' code', 0.62], [' build', 0.20], [' work', 0.08]],
+    [[' together', 0.41], [' by', 0.25], [' every', 0.14]],
+    [['.', 0.70], [' and', 0.18], [' every', 0.05]],
+  ];
+  let genIdx = 0;
+  const genText = document.getElementById('genText');
+  const genBars = document.getElementById('genBars');
+
+  function genRender(lastToken) {
+    genText.textContent = '';
+    const base = document.createElement('span');
+    let text = genStart;
+    for (let i = 0; i < genIdx - (lastToken ? 1 : 0); i++) text += genSteps[i][0][0];
+    base.textContent = text;
+    genText.appendChild(base);
+    if (lastToken) {
+      const n = document.createElement('span');
+      n.className = 'new';
+      n.textContent = lastToken;
+      genText.appendChild(n);
+    }
+    if (genIdx < genSteps.length) renderBars(genBars, genSteps[genIdx].map(([t, p]) => ['“' + t.trim() + '”', p]));
+    else genBars.innerHTML = '<p class="muted">Done. A real model keeps going until it predicts a stop token.</p>';
+  }
+  document.getElementById('genNext').onclick = () => {
+    if (genIdx >= genSteps.length) return;
+    const tok = genSteps[genIdx][0][0];
+    genIdx++;
+    genRender(tok);
+  };
+  document.getElementById('genReset').onclick = () => { genIdx = 0; genRender(null); };
+  genRender(null);
+
+  // ---------- Temperature (toy logits, real softmax) ----------
+  const logits = [['lake', 2.2], ['people', 2.0], ['forest', 1.6], ['sauna', 1.3], ['food', 0.6], ['pizza', -0.5]];
+  const tempSlider = document.getElementById('tempSlider');
+
+  function tempProbs(T) {
+    if (T < 0.05) return logits.map(([w], i) => [w, i === 0 ? 1 : 0]);
+    const ex = logits.map(([w, l]) => [w, Math.exp(l / T)]);
+    const sum = ex.reduce((a, [, v]) => a + v, 0);
+    return ex.map(([w, v]) => [w, v / sum]);
+  }
+  function tempRender() {
+    const T = parseFloat(tempSlider.value);
+    document.getElementById('tempVal').textContent = T.toFixed(1);
+    renderBars(document.getElementById('tempBars'), tempProbs(T));
+  }
+  tempSlider.addEventListener('input', tempRender);
+  document.getElementById('tempSample').onclick = () => {
+    const probs = tempProbs(parseFloat(tempSlider.value));
+    const out = [];
+    for (let k = 0; k < 10; k++) {
+      let r = Math.random(), acc = 0, pick = probs[probs.length - 1][0];
+      for (const [w, p] of probs) { acc += p; if (r < acc) { pick = w; break; } }
+      out.push(pick);
+    }
+    document.getElementById('tempSamples').innerHTML = out.map((w) => '<b>' + w + '</b>').join(', ');
+  };
+  tempRender();
+
+  // ---------- Live stream from Ollama ----------
+  const liveOut = document.getElementById('liveOut');
+  const liveStats = document.getElementById('liveStats');
+  let controller = null;
+
+  document.getElementById('liveGo').onclick = async () => {
+    if (controller) controller.abort();
+    controller = new AbortController();
+    liveOut.innerHTML = '';
+    liveStats.textContent = 'Waiting for the model…';
+    let chunks = 0;
+    try {
+      const res = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        body: JSON.stringify({
+          model: document.getElementById('liveModel').value.trim(),
+          prompt: document.getElementById('livePrompt').value,
+          stream: true,
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (await res.text()));
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const j = JSON.parse(line);
+          if (j.error) throw new Error(j.error);
+          if (j.response) {
+            const s = document.createElement('span');
+            s.className = 'tk';
+            s.textContent = j.response;
+            liveOut.appendChild(s);
+            liveOut.scrollTop = liveOut.scrollHeight;
+            chunks++;
+            liveStats.textContent = chunks + ' tokens';
+          }
+          if (j.done && j.eval_count && j.eval_duration) {
+            const tps = j.eval_count / (j.eval_duration / 1e9);
+            liveStats.textContent = j.eval_count + ' tokens · ' + tps.toFixed(1) + ' tokens/second on this laptop';
+          }
+        }
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') { liveStats.textContent = 'Stopped.'; return; }
+      liveStats.textContent = 'Could not reach Ollama: ' + err.message + '. Is it running? Try OLLAMA_ORIGINS=* ollama serve';
+    }
+  };
+  document.getElementById('liveStop').onclick = () => { if (controller) controller.abort(); };
+
+  // ---------- Start ----------
+  fit();
+  const fromHash = parseInt((location.hash || '').slice(1), 10);
+  show(Number.isFinite(fromHash) ? fromHash - 1 : 0);
+})();
+</script>
+</body>
+</html>
